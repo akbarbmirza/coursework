@@ -9,6 +9,7 @@ theme_set(theme_bw())
 ratings <- read_csv('ratings.csv',
                     col_names = c('user_id','movie_id','rating','timestamp'))
 
+
 # for reference: same thing, using base R functions and explicitly setting column information
 #   ratings <- read.delim('ratings.csv',
 #                         sep=',',
