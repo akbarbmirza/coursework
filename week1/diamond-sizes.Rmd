@@ -1,0 +1,30 @@
+---
+title: "Diamond sizes"
+date: 2016-08-25
+output: html_document
+---
+
+```{r setup, include = FALSE}
+library(ggplot2)
+library(dplyr)
+
+knitr::opts_chunk$set(
+  echo = FALSE
+)
+
+smaller <- diamonds %>% 
+  filter(carat <= 2.5)
+```
+
+We have data about `r nrow(diamonds)` diamonds. Only 
+`r nrow(diamonds) - nrow(smaller)` are larger than
+2.5 carats. The distribution of the remainder is shown
+below:
+
+```{r, echo = FALSE}
+smaller %>% 
+  ggplot(aes(carat)) + 
+  geom_freqpoly(binwidth = 0.01)
+```
+
+> There are `r count(diamonds)` diamonds in our data set. We have various peaks around 0.3 carats, 0.6 carats, and 1.0 carats. Diamonds with a carat size of `r diamonds %>% group_by(carat) %>% summarize(count=n()) %>% arrange(desc(count)) %>% select(carat) %>% head(1) %>% max()` are the most popular.
