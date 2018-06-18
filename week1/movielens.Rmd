@@ -58,8 +58,8 @@ ratings %>% group_by(movie_id) %>%
 # plot distribution of movie popularity (= number of ratings the movie received)
 # hint: try scale_x_log10() for a logarithmic x axis
 ratings %>% group_by(movie_id) %>%
-  summarize(avg_rating = mean(rating), count = n()) %>%
-  ggplot(mapping = aes(x = count)) +
+  summarize(avg_rating = mean(rating), movie_pop = n()) %>%
+  ggplot(mapping = aes(x = movie_pop)) +
   geom_histogram() +
   scale_x_log10()
 ```
@@ -100,8 +100,8 @@ user_ratings <- ratings %>% group_by(user_id) %>%
 # plot distribution of user activity (= number of ratings the user made)
 # hint: try a log scale here
 ratings %>% group_by(user_id) %>%
-  summarize(avg_user_rating = mean(rating), count = n()) %>%
-  ggplot(mapping = aes(x = count)) +
+  summarize(avg_user_rating = mean(rating), num_ratings = n()) %>%
+  ggplot(mapping = aes(x = num_ratings)) +
   geom_histogram() + 
   scale_x_log10()
 ```
@@ -122,7 +122,27 @@ ratings %>% group_by(user_id) %>%
 # another for 90%---do not, however, bother implementing the null
 # model (shown in the dashed lines).
 
-qualified_users <- user_ratings %>% filter(num_ratings >= 10) %>% select(user_id)
-ratings %>% filter(! user_id %in% qualified_users)
-  
+qualified_users <- ratings %>% group_by(user_id) %>% filter(n() >= 10)
+
+# group by movie id %>% count %>% rank = ranktable
+ranked_ratings <- ratings %>% group_by(movie_id) %>%
+  summarize(avg_rating = mean(rating), count = n()) %>%
+  arrange(desc(count)) %>% mutate(ranking = rank(desc(count)))
+
+# compute rank of weirdest movie each person rates - join ratings with movie pop - group_by user and max(rank) 
+
+percentiles <- qualified_users %>% left_join(ranked_ratings) %>% group_by(user_id) %>%
+  summarize(weirdest_rank = max(ranking), `90perc` = quantile(ranking, .9))
+
+`100P` <- select(percentiles, user_id, weirdest_rank) %>% group_by(weirdest_rank) %>%
+  summarize(numUsers = n()) %>% arrange(weirdest_rank) %>%
+  mutate(fracUsers100 = cumsum(numUsers)/ sum(numUsers))
+
+`90P` <- select(percentiles, user_id, `90perc`) %>% group_by(`90perc`) %>% summarize(numUsers = n()) %>% arrange(`90perc`) %>% mutate(fracUsers90 = cumsum(numUsers)/ sum(numUsers))
+
+full_join(`100P`, `90P`, by = c('weirdest_rank' = '90perc')) %>% select(weirdest_rank, fracUsers90, fracUsers100) %>% gather("table", "fracUsers", fracUsers90, fracUsers100) %>%
+ ggplot(aes(x = weirdest_rank, y = fracUsers, color = table)) + 
+ geom_smooth() +
+ xlab("Inventory Size") +
+ ylab("Percent of Users Satisfied")
 ```
