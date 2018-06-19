@@ -1,0 +1,82 @@
+---
+title: "The Sampling Distribution Exercises"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lubridate)
+library(tidyverse)
+```
+
+## 7.4 Solved Exercises
+
+### 7.1
+
+The file `"pop2.csv"` contains information associated to the
+blood pressure of an imaginary population of size 100,000. The file can be found
+on the internet (http://pluto.huji.ac.il/~msby/StatThink/Datasets/pop2.
+csv). The variables in this file are:
+
+  + **id**: A numerical variable. A 7 digits number that serves as a unique identifier
+of the subject.
+  + **sex**: A factor variable. The sex of each subject. The values are either "MALE"
+or "FEMALE".
+  + **age**: A numerical variable. The age of each subject.
+  + **bmi**: A numerical variable. The body mass index of each subject.
+  + **systolic**: A numerical variable. The systolic blood pressure of each subject.
+  + **diastolic**: A numerical variable. The diastolic blood pressure of each subject.
+  + **group**: A factor variable. The blood pressure category of each subject. The
+values are "NORMAL" both the systolic blood pressure is within its normal
+range (between 90 and 139) and the diastolic blood pressure is within its
+normal range (between 60 and 89). The value is "HIGH" if either measurements
+of blood pressure are above their normal upper limits and it is
+"LOW" if either measurements are below their normal lower limits.
+Our goal in this question is to investigate the sampling distribution of the sample
+average of the variable "bmi". We assume a sample of size n = 150.
+
+  1. Compute the population average of the variable "bmi".
+  2. Compute the population standard deviation of the variable "bmi".
+  3. Compute the expectation of the sampling distribution for the sample average of the variable.
+  4. Compute the standard deviation of the sampling distribution for the sample
+average of the variable.
+  5. Identify, using simulations, the central region that contains 80% of the
+sampling distribution of the sample average.
+  6. Identify, using the Central Limit Theorem, an approximation of the central
+region that contains 80% of the sampling distribution of the sample
+average.
+
+```{r pop2}
+
+pop <- read.csv('pop2.csv')
+
+# 1. Compute the population average of the variable "bmi"
+pop %>% summarize(pop_bmi_avg = mean(bmi))
+
+# 2. Compute the population standard deviation of the variable "bmi".
+pop %>% summarize(pop_bmi_sd = sd(bmi))
+
+# 3. Compute the expectation of the sampling distribution for the sample average
+# of the variable.
+x_bar <- rep(0, 10^5)
+for(i in 1:10^5) {
+  x_sample <- sample(pop$bmi, size = 150)
+  x_bar[i] <- mean(x_sample)
+}
+mean(x_bar)
+
+# 4. Compute the standard deviation of the sampling distribution for the sample
+# average of the variable.
+sd(x_bar)
+
+# 5. Identify, using simulations, the central region that contains 80% of the
+# sampling distribution of the sample average.
+quantile(x_bar, c(0.1, 0.9))
+
+# 6. Identify, using the Central Limit Theorem, an approximation of the central
+# region that contains 80% of the sampling distribution of the sample
+# average.
+qnorm(c(0.1, 0.9), mean(x_bar), sd(x_bar))
+
+```
