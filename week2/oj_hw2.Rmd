@@ -1,0 +1,147 @@
+---
+title: "Orange Juice"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+oj <- read.csv("oj.csv")
+```
+
+## Orange Juice - HW 2
+
+### 4) Visualizing Price
+
+```{r visualizing-price}
+
+# Make a box plot of price
+oj %>% ggplot(mapping = aes("", price)) +
+  geom_boxplot()
+
+# Make a box plot of log price
+oj %>% ggplot(mapping = aes("", log(price))) +
+  geom_boxplot()
+
+# Make a box plot of price, but sepatate out each brand
+oj %>% ggplot(mapping = aes(factor(brand), price)) +
+  geom_boxplot(aes(fill = factor(brand)))
+
+# Do the same for log price
+oj %>% ggplot(mapping = aes(factor(brand), log(price))) +
+  geom_boxplot(aes(fill = factor(brand)))
+
+```
+
+What do these graphs tell you about the variation in price? Why do the log plots look different? Do you find them more/less informative?
+
+  + the log plots look different because they're showing a shift in the big picture of the price differences. It's minimizing minor variances within the input.
+  + in this case, I don't see a big difference in the information being displayed, but in a case where there's much more variance among price between brands, it might make it see actual differences when the differences between brands are relatively minor?
+
+### 5) Visualizing Quantity/Price Relationship
+
+```{r visualizing-quantity-price-relationship}
+
+# Plot logmove (log quantity) vs. log(price) for each brand
+oj %>% ggplot(mapping = aes(x = log(price), y = logmove)) +
+  geom_point(aes(color = factor(brand))) +
+  geom_smooth(method = "lm", formula = y ~ x) # + 
+  # geom_abline(intercept = 1.187743, slope = -0.14670, aes(color = "red")) +
+  # geom_abline(intercept = 1.187743, slope = -0.11784 , aes(color = "green")) +
+  # geom_abline(intercept = 1.187743, slope = -0.09306, color = "blue")
+```
+
+What do insights can you derive that were not apparent before?
+
++ Lowering the price results in more units being moved
++ However, the shift isn't the same for all brands
+
+### 6) Estimating the Relationship
+
+``` {r estimating-relationship}
+# Do a regression of log quantity on log price.
+regression <- lm(logmove ~ log(price), oj)
+summary(regression) # R^2 = 0.2081
+
+# How well does the model fit? (rsquared)
+# ---------------------------------------
+# The model has a pretty weak fit. It has a pretty low R^2 value.
+
+# The model fits well on the broad strokes of the quantity-price relationship. As price goes down, the number of units moved goes up.
+
+# What is the elasticity, does it make sense?
+PE <- regression$coefficients["log(price)"] * mean(log(oj$price)) / mean(oj$logmove)
+# It makes sense that the elasticity is negative, since the higher the price, the lower the quantity moved is 
+
+# Now add in an intercept term for each brand (add brand to the regression)
+regression_tropicana <- lm(logmove ~ log(price), oj, subset = brand == "tropicana")
+summary(regression_tropicana) # R^2 = 0.4274
+regression_minutemaid <- lm(logmove ~ log(price), oj, subset = brand == "minute.maid")
+summary(regression_minutemaid) # R^2 = 0.3736
+regression_dominicks <- lm(logmove ~ log(price), oj, subset = brand == "dominicks")
+summary(regression_dominicks) # R^2 = 0.397
+
+# how do the results change? 
+# the results show that the shifts in units moved as a function of price is much stronger with regards for brands like minute maid and dominicks than for tropicana
+
+# Now figure out a way to allow the elasticities to differ by brand. Search "interaction terms" and "dummy variables" if you don't remember this from econometrics. Note the estimate coefficients will "offset" the base estimates. What is the insights we get from this regression? What is the elasticity for each firm? Do the elasticities make sense?
+regression_with_interactions <- lm(logmove ~ log(price) * brand, oj)
+summary(regression) # R^2 = 0.2081, pretty bad fit
+
+# Elasticities By Brand:
+# Dominicks: -0.14670  
+# Minute Maid: -0.11784 
+# Tropicana: -0.09306  
+
+# The elasticities make sense for the three firms as it matches what we see in the shifts based on brand earlier
+
+# d.	Super Star Status: Hold out 20% of your sample randomly.  Estimate the model on the remaining 80%.  Use the predict command to see how well the model fits on the rest of the data (e.g., y_hat <- predict(my_model, newx = test_matrix))
+
+estimate_data <- sample_n(oj, 0.8 * nrow(oj), replace = TRUE)
+test_data <- setdiff(oj, estimate_data)
+
+estimated_model <- lm(logmove ~ log(price), estimate_data)
+y_hat <- predict(estimated_model, test_data)
+test_data["predicted_vals"] = y_hat
+test_data %>% select(brand, price, logmove, predicted_vals)
+
+summary(estimated_model) # R^2 = 0.2122, so the fit is pretty bad
+```
+
+### 7)	Impact of "Featuring in Store".
+
+The "feat" variable is an indicator variable which takes the value of one when a product is featured (e.g., like on an endcap display) 
+``` {r impact-of-featuring}
+
+# Which brand is featured the most?
+oj %>% group_by(brand) %>% summarize(times_featured = sum(feat)) %>% arrange(desc(times_featured)) %>% head(1) # minute.maid
+
+oj %>% group_by(brand) %>% filter(feat == TRUE) %>% ggplot() + 
+  geom_histogram(aes(x = factor(brand), fill = brand), stat = "count")
+
+# What is the average price and featured rate of each brand?
+oj %>% group_by(brand) %>% summarize(avg_price = mean(price), feat_rate = sum(feat) / n())
+
+# brand       | avg_price | feat_rate
+# ------------|-----------|------------
+# dominicks	    1.735809	   0.2570215		
+# minute.maid	  2.241162	   0.2885273		
+# tropicana	    2.870493	   0.1662348
+
+# How should incorporate the feature variable into our regression? Start with an additive formulation (e.g. feature impacts sales, but not through price).
+feat_model <- lm(logmove ~ log(price) + feat, oj)
+summary(feat_model)
+
+# Now run a model where features can impact sales and price sensitivity.
+sensitivity_model <- lm(logmove ~ log(price) * feat, oj)
+summary(sensitivity_model)
+
+# Now add what you think are the most relevant sociodemographic controls and produce the regression results from that regression as well.
+extra_model <- lm(logmove ~ log(price) * feat * INCOME * ETHNIC, oj)
+summary(extra_model)
+
+```
