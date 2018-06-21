@@ -142,7 +142,7 @@ percentiles <- qualified_users %>% left_join(ranked_ratings) %>% group_by(user_i
 
 full_join(`100P`, `90P`, by = c('weirdest_rank' = '90perc')) %>% select(weirdest_rank, fracUsers90, fracUsers100) %>% gather("table", "fracUsers", fracUsers90, fracUsers100) %>%
  ggplot(aes(x = weirdest_rank, y = fracUsers, color = table)) + 
- geom_smooth() +
+ geom_point() +
  xlab("Inventory Size") +
  ylab("Percent of Users Satisfied")
 ```
