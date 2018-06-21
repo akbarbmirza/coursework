@@ -1,0 +1,246 @@
+---
+title: 'OJ HW3: Interpretation and Cross Validation'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+oj <- read.csv("oj.csv")
+```
+
+## 1) OJ Dataset & Store Demographics
+
+Let's return to the orange juice dataset and investigate how store demographics are related to demand.
+
+```{r oj-dataset}
+
+# Take the "fully interacted" model from HW2 `(logmove ~ log(price)*brand*feat)` and add in the store demographics as linear features (e.g. + demo1 + demo2+.)
+fi_model <- lm(logmove ~ log(price) * brand * feat + AGE60 + EDUC + ETHNIC + INCOME + HHLARGE + WORKWOM + HVAL150 + SSTRDIST + SSTRVOL + CPDIST5 + CPWVOL5, oj)
+
+# What demographics are significantly (t>2) related to demand?
+# ------------------------------------------------------------------------------
+# AGE60, EDUC, ETHNIC, INCOME, HHLARGE, HVAL150, SSTRDIST, SSTRVOL, CPDIST5, CPWVOL5
+
+# How much did the adjusted R-squared improve with the addition of these variables?
+# ------------------------------------------------------------------------------
+# Old R-squared:  0.5352 => New R-Squared: 0.5848
+# it improved by 0.5
+
+
+```
+
+## 2) Focusing on Two Variables
+
+Let's focus on two variables `HVAL150` ("percent of HHs with homes >$150K") and one of your choosing. 
+
+```{r two-variables}
+
+# What are the means and percentiles of each of these variables?
+
+# HVAL150
+summary(oj$HVAL150)
+#     Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+# 0.002509 0.123486 0.346154 0.343766 0.528313 0.916700 
+
+# ETHNIC
+summary(oj$ETHNIC)
+#    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.02425 0.04191 0.07466 0.15556 0.18776 0.99569 
+
+# Using your coefficient estimates from the regression in 1b:
+#   If we move from the median value of HVAL150 to the 75th percentile (3rd quartile), how much does `log(quantity)` change each week on average?
+
+hval_coef <- coef(fi_model)[["HVAL150"]]
+delta <- summary(oj$HVAL150)[["3rd Qu."]] - summary(oj$HVAL150)[["Median"]]
+q_change = exp(delta * hval_coef) # 1.067301
+
+# If we move from the median value of EDUC to the 75th percentile (3rd quartile),
+# how much does log(quantity) change each week on average?
+# ------------------------------------------------------------------------------
+educ_coef <- coef(fi_model)[["EDUC"]]
+delta <- summary(oj$EDUC)[["3rd Qu."]] - summary(oj$EDUC)[["Median"]]
+q_change = exp(delta * educ_coef) # 1.053987
+
+# Base on this analysis, which is the more important predictor of demand?
+# ------------------------------------------------------------------------------
+# You could say that it's HVAL, but the difference is so small that it could be
+# negligible.
+
+
+# Now let's see if these variables impact price sensitivity. Add two interaction
+# terms (with logprice) to the model to test this..  (Do this quickly.) 
+fi_sensitivity_model <- lm(logmove ~ log(price) * brand * feat + AGE60 + EDUC + ETHNIC + INCOME + HHLARGE + WORKWOM + HVAL150 + SSTRDIST + SSTRVOL + CPDIST5 + CPWVOL5 +  EDUC * log(price) + HVAL150 * log(price), oj)
+
+# What are the coefficients on the interaction terms?
+price_EDUC_interaction <- coef(fi_sensitivity_model)[["log(price):EDUC"]] # -0.8354468
+price_HVAL150_interaction <- coef(fi_sensitivity_model)[["log(price):HVAL150"]] # 2.554478
+
+# Recall, positive values indicate lower price sensitivity and negative values
+# indicate greater price sensitivity. Do your estimates make sense based on your
+# intuition?
+# ------------------------------------------------------------------------------
+# Yes. It makes intuitive sense that neighborhoods with richer households (HVAL150)
+# would be sensitive to a rise in prices for orange juice. It also makes sense
+# that between education and HVAL150, HVAL150 has a stronger relationship.
+# As for EDUC, the connection is more tenuous. you could make the case that
+# educated households would be aware of price drops and make buying decisions
+# based off of that.
+
+# What are the coefficient estimates on the constants HVAL150 and your variable
+# of choice? How do they compare to your regression from 1b?
+# ------------------------------------------------------------------------------
+interaction_coef_HVAL150 <- coef(fi_sensitivity_model)[["HVAL150"]] # -1.622375
+interaction_coef_ETHNIC <- coef(fi_sensitivity_model)[["ETHNIC"]] # 0.6618413
+
+# Similar to 2b, if we move from the median value of each variable to the
+# 3rd quartile, how much does elasticity change? Based on this, which is more
+# important to price sensitivity?
+# ------------------------------------------------------------------------------
+
+# Price Sensitivity of HVAL150
+delta <- summary(oj$HVAL150)[["3rd Qu."]] - summary(oj$HVAL150)[["Median"]]
+q_change = exp(delta * interaction_coef_HVAL150) # 0.7441369
+
+# Price Sensitivity of ETHNIC
+delta <- summary(oj$ETHNIC)[["3rd Qu."]] - summary(oj$ETHNIC)[["Median"]]
+q_change = exp(delta * interaction_coef_ETHNIC) # 1.07773
+
+# Based on this, the percentage of black or hispanic households is more important
+# to price sensitivity.
+
+```
+
+## 3) Tuna Fish Question
+
+Create make a new dataframe which takes the previous week's prices as a variable on the same line as the current week. This would enable you to see if there is intertemporal substitution. 
+
+There are going to be a couple of steps. First is creating a new dataframe which is like the old one except that the week variable will change by a single week
+```{r tuna-fish-a}
+lagged_df <- oj
+lagged_df$week <- lagged_df$week + 1
+# lagged_df now has NEXT week and not the current one.  If we merge this by
+# weeks now, this is last week's price (e.g., "lagged price").
+myvars <- c("price", "week", "brand", "store")
+lagged_df <- lagged_df[myvars]
+lagged <- merge(oj, lagged_df, by=c("brand", "store", "week"))
+```  
+
+Investigate the Df2 and rename the lagged store values needed for a lagged price within the same store
+```{r tuna-fish-b}
+# NOTE: The number of observations decreased. Why? You've just lost (at least)
+# one week's worth of data at each store
+
+colnames(lagged)[18] = "lagged_price"
+colnames(lagged)[6] = "price"
+```
+
+Now run a regression with this week's log(quantity) on current and last week's price.
+```{r tuna-fish-c}
+  
+```
+
+What do you notice about the previous week's elasticity?  Does this make sales more or less attractive from a profit maximization perspective?  Why?
+```{r tuna-fish-d}
+  
+```
+
+## 4) 5-Fold Cross Validation
+
+In the last assignment you calculated the MSE on a test set.  Let's expand that code to include 5-fold cross validation.  
+
+``` {r }
+
+set.seed(1)
+sample_percent <- .8
+N <- length(oj$logmove) 
+sample_size <- round(sample_percent*N)
+lagged_subset <- sample_n(lagged, sample_size, replace = FALSE)
+#NOTE: We can do the above three lines in a single line.  Can you think of how?  
+test = anti_join(lagged, lagged_subset)
+
+```
++ Create 5 partitions of the data of equal size.
+``` {r }
+
+set.seed(20)
+folds <- 5
+
+random_lagged <- oj[sample(nrow(oj)), ]
+random_lagged$rand_obs <- seq(1, nrow(random_lagged))
+
+random_lagged$partition <- random_lagged$rand_obs %% folds + 1
+MSEs <- c(1:folds)
+
+```
++ Create 5 training datasets using 80% of the data for each one.  This can be done multiple ways (e.g., "appending" the data together using `rbind`, randomly creating partitions and sub-setting data according to them, etc.)
+``` {r }
+
+
+for (i in 1:folds) {
+  oj_test1 <- random_oj[which(random_oj$partition == i), ]
+  oj_train1 <- anti_join(random_lagged, oj_test1)
+  
+  # add a regression model
+  reg1 <- lm(logmove ~ log(price) * brand * feat + AGE60 + EDUC + ETHNIC + INCOME + HHLARGE + WORKWOM + HVAL150 + SSTRDIST + SSTRVOL + CPDIST5 + CPWVOL5, oj)
+  # predict y
+  oj_test1$logmove_hat <- predict(reg1, newdata=oj_test1)
+  MSE <- mean((oj_test1$logmove_hat - oj_test1$logmove)^2)
+  MSEs[i] <- MSE
+}
+
+```
+
++ Estimate a complex model using OLS which includes `price`, `featured`, `brand`, `brand*price` and `lagged_price`, all the sociodemographic variables and interactions of `EDUC` and `HHSIZE` with price on each of the training sets then the MSE on the test sets using the predict command.
+  + Calculate the MSE for each run of the model by averaging across all the MSEs.
+
+## 5) LASSO
+
+Now take that same model from (4) and estimate it with LASSO.  Here is some relevant code:
+
+```r
+x <- model.matrix(~ log(price) + feat + brand + brand*log(price) + … +log(lagged_price) , data= my_awesome_data) 
+y <- as.numeric(as.matrix(lagged$logmove)) 
+set.seed(720) 
+lasso_v1 <- glmnet(x, y, alpha=1)
+plot(laxxo_v1)
+coef(lasso_v1, s=lasso_v1$lambda.min)
+
+# The cross validated version of the model (with some different objects) is
+# this one: 
+#   lasso_v1 <- cv.glmnet(x, y, alpha=1)
+#   cvfit$lambda.min
+#   coef(cvfit, s = "lambda.min")
+```
+
+```{r pressure}
+
+```
+
+# 06.21.18
+
+## Spread Price & Brand Data
+
+```{r spread-price-brand}
+# first we're going to gather information by store, week and spread the prices
+# for each brand
+
+prices_per_store_wk <- oj %>% group_by(store, week) %>% select(store, week, brand, price) %>% spread(brand, price)
+
+oj_with_brand_prices <- oj %>% merge(prices_per_store_wk, by=c("store", "week"))
+
+mm <- oj_with_brand_prices %>% filter(brand == "minute.maid")
+reg_mm <- glm(logmove ~ log(dominicks) + log(minute.maid) + log(tropicana), data = mm)
+
+tr <- oj_with_brand_prices %>% filter(brand == "tropicana")
+reg_tr <- glm(logmove ~ log(dominicks) + log(minute.maid) + log(tropicana), data = tr)
+
+do <- oj_with_brand_prices %>% filter(brand == "dominicks")
+reg_do <- glm(logmove ~ log(dominicks) + log(minute.maid) + log(tropicana), data = do)
+
+
+```
