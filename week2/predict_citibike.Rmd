@@ -1,0 +1,103 @@
+---
+title: "Citibike Predictions"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(modelr)
+library(scales)
+library(ggthemes)
+
+
+theme_set(theme_gdocs())
+
+# load year of citibike trips
+load(file="trips.RData")
+
+# load holiday data
+holidays <- read.csv(file="us-bank-holidays-2011-2020.csv") %>% select(Date, Bank.Holiday)
+holidays <- holidays %>% mutate(ymd = as.Date(Date, "%m/%d/%Y")) %>% select(ymd, Bank.Holiday)
+colnames(holidays) <- c("ymd", "is_holiday")
+
+# 1
+ridership <- trips %>% group_by(ymd) %>% summarize(num_trips = n())
+ridership_with_weather <- ridership %>% left_join(weather) %>% filter(! is.na(tmin))
+```
+
+## Predict Daily Citibike Trips
+
+```{r best-model}
+set.seed(27)
+# 
+# formula <- num_trips ~ poly(tmin, 5)
+# 
+# best_model <- lm(formula = formula, data = ridership_with_weather)
+# best_y_hat <- predict(best_model, ridership_with_weather)
+#   
+# plot_data <- ridership_with_weather %>% mutate(pred = best_y_hat)
+# 
+# plot_data %>% ggplot(aes(x = tmin)) +
+#   geom_point(aes(y = num_trips), color = "blue") +
+#   geom_point(aes(y = pred), color = "red") +
+#   scale_color_gdocs()
+
+```
+
+## Predictive Model
+
+```{r}
+
+ridership_with_weather$lagged_trips <- lag(ridership_with_weather$num_trips)
+ridership_with_weather$day_of_week <- weekdays(ridership_with_weather$ymd)
+ridership_with_weather$avg_temp <- (ridership_with_weather$tmin + ridership_with_weather$tmax) / 2
+ridership_with_weather$is_weekend <- (ridership_with_weather$day_of_week == "Saturday" |
+                                        ridership_with_weather$day_of_week == "Sunday")
+ridership_with_weather <- left_join(ridership_with_weather, holidays)
+
+# clean NA's in holidays
+ridership_with_weather$is_holiday <- replace_na(ridership_with_weather$is_holiday, FALSE)
+
+
+
+sample_data <- ridership_with_weather %>% sample_frac(0.8)
+test_data <- anti_join(ridership_with_weather, sample_data)
+
+predicting_model <- lm(num_trips ~ avg_temp + is_weekend + prcp + snwd + is_holiday + lagged_trips, data = sample_data)
+summary(predicting_model)
+
+# train_y_hat <- predict(predicting_model, sample_data)
+y_hat <- predict(predicting_model, test_data)
+
+plot_data <- test_data %>%
+  mutate(pred = y_hat)
+
+plot_data %>% ggplot(aes(y = num_trips, x = ymd)) +
+  geom_point() +
+  geom_line(aes(y = pred))
+# 
+# # training r^2 = 0.68
+r_squared_test <- cor(y_hat, test_data$num_trips) ^ 2 # 0.8967
+
+rmse_squared_training <- rmse(predicting_model, sample_data) # 3602.9012
+rmse_squared_test <- rmse(predicting_model, test_data) # 3401.6536
+
+
+full_y_hat <- predict(predicting_model, ridership_with_weather)
+full_plot_data <- ridership_with_weather %>%
+  mutate(pred = full_y_hat)
+
+full_plot_data %>% ggplot(aes(y = num_trips, x = ymd)) +
+  geom_point() +
+  geom_line(aes(y = pred))
+
+full_plot_data %>% ggplot(aes(x = pred, y = num_trips)) +
+  geom_point()
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,135 @@
+---
+title: "WK2, HW4: Cross Validation & Model Selection"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(modelr)
+library(scales)
+library(ggthemes)
+
+
+theme_set(theme_gdocs())
+
+# load year of citibike trips
+load(file="trips.RData")
+
+# 1
+ridership <- trips %>% group_by(ymd) %>% summarize(num_trips = n())
+ridership_with_weather <- ridership %>% left_join(weather) %>% filter(! is.na(tmin))
+```
+
+## Cross Validation for Citibike Trips
+
+1. Create a data frame with one row for each day, the number of trips taken on that day, and the minimum temperature on that day.
+2. Split the data into a randomly selected training and test set, as in the above exercise, with 80% of the data for training the model and 20% for testing.
+3. Fit a model using lm to predict the number of trips as a (linear) function of the minimum temperature, and evaluate the fit on the training and testing data sets. Do this first visually by plotting the predicted and actual values as a function of the minimum temperature. Then do this with R^2 and RMSE on both the training and test sets. You'll want to use the predict and cor functions for this.
+```{r }
+
+# ridership_with_weather <- ridership_with_weather %>% mutate(avg_temp = (tmax + tmin) / 2)
+set.seed(1)
+sample_data <- ridership_with_weather %>% sample_frac(0.8)
+test_data <- anti_join(ridership_with_weather, sample_data)
+
+
+simple_model <- lm(formula = num_trips ~ tmin, data = sample_data)
+train_y_hat <- predict(simple_model, sample_data)
+y_hat <- predict(simple_model, test_data)
+
+plot_data <- test_data %>%
+  mutate(pred = y_hat)
+
+plot_data %>% ggplot(aes(y = num_trips, x = tmin)) + 
+  geom_point() +
+  geom_smooth(method = "lm")
+
+# training r^2 = 0.68
+r_squared_test <- cor(y_hat, test_data$num_trips) ^ 2 # 0.6716638
+
+rmse_squared_training <- rmse(simple_model, sample_data) # 5831.039
+rmse_squared_test <- rmse(simple_model, test_data) # 5720.373
+
+```
+
+4. Repeat this procedure, but add a quadratic term to your model (e.g., + tmin^2, or (more or less) equivalently + poly(tmin,2)). How does the model change, and how do the fits between the linear and quadratic models compare?
+
+```{r quadratic-term-model}
+
+quadratic_model <- lm(formula = num_trips ~ poly(tmin, 2), data = sample_data)
+quad_y_hat <- predict(quadratic_model, test_data)
+
+plot_data <- test_data %>%
+  mutate(pred = quad_y_hat)
+
+plot_data %>% ggplot(aes(y = num_trips, x = tmin)) + 
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x^2)
+
+# training r^2 = 0.68
+r_squared_test <- cor(quad_y_hat, test_data$num_trips) ^ 2 # 0.6688884
+
+rmse_squared_training <- rmse(quadratic_model, sample_data) # 5827.525
+rmse_squared_test <- rmse(quadratic_model, test_data) # 5743.866
+
+```
+
+5. Now automate this, extending the model to higher-order polynomials with a for loop over the degree k. For each value of k, fit a model to the training data and save the R^2 on the training data to one vector and test vector to another. Then plot the training and test R^2 as a function of k. What value of k has the best performance?
+
+```{r automated-models}
+k <- 5
+training_r_squared_vector <- c()
+test_r_squared_vector <- c()
+
+for (i in 1:k) {
+  
+  formula <- num_trips ~ poly(tmin, i)
+  
+  i_polynomial_model <- lm(formula = formula, data = sample_data)
+  train_i_y_hat <- predict(i_polynomial_model, sample_data)
+  i_y_hat <- predict(i_polynomial_model, test_data)
+  
+  r_squared_training <- cor(train_i_y_hat, sample_data$num_trips) ^ 2
+  training_r_squared_vector[i] <- r_squared_training
+  r_squared_test <- cor(i_y_hat, test_data$num_trips) ^ 2
+  print(r_squared_test)
+  test_r_squared_vector[i] <- r_squared_test
+  
+  rmse_squared_training <- rmse(i_polynomial_model, sample_data) # 5827.525
+  rmse_squared_test <- rmse(i_polynomial_model, test_data) # 5743.866
+
+}
+
+plot_matrix <- cbind(training = training_r_squared_vector, test = test_r_squared_vector, degree = 1:k) %>% as.data.frame()
+
+plot_matrix %>% ggplot(aes(x = degree)) +
+  geom_line(aes(y = training), color = "blue") +
+  geom_line(aes(y = test), color = "red")
+
+# 5 is the most accurate based on R^2
+
+```
+
+6. Finally, fit one model for the value of k with the best performance in 6), and plot the actual and predicted values for this model.
+
+```{r best-model}
+  
+formula <- num_trips ~ poly(tmin, 5)
+
+best_model <- lm(formula = formula, data = ridership_with_weather)
+best_y_hat <- predict(best_model, ridership_with_weather)
+  
+plot_data <- ridership_with_weather %>% mutate(pred = best_y_hat)
+
+plot_data %>% ggplot(aes(x = tmin)) +
+  geom_point(aes(y = num_trips), color = "blue") +
+  geom_point(aes(y = pred), color = "red") +
+  scale_color_gdocs()
+
+```
+
