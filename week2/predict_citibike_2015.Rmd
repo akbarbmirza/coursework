@@ -1,0 +1,69 @@
+---
+title: "Predict Citibike 2015"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(modelr)
+library(scales)
+library(ggthemes)
+
+
+theme_set(theme_bw())
+
+# load year of citibike trips
+load(file="trips.RData")
+
+# load predicting model for 2014
+load(file="predict_citibike.RData")
+
+# load holiday data
+holidays <- read.csv(file="us-bank-holidays-2011-2020.csv") %>% select(Date, Bank.Holiday)
+holidays <- holidays %>% mutate(ymd = as.Date(Date, "%m/%d/%Y")) %>% select(ymd, Bank.Holiday)
+colnames(holidays) <- c("ymd", "is_holiday")
+
+weather <- weather %>% mutate(ymd = as.Date(date, "%Y-%m-%d")) %>% select(ymd, prcp, snwd, snow, tmax, tmin)
+
+# Create Ridership & Ridership with Weather Data
+ridership <- trips %>% group_by(ymd) %>% summarize(num_trips = n())
+ridership_with_weather <- ridership %>% left_join(weather) %>% filter(! is.na(tmin))
+
+# Add Columns for Our Data
+ridership_with_weather$lagged_trips <- lag(ridership_with_weather$num_trips)
+ridership_with_weather$day_of_week <- weekdays(ridership_with_weather$ymd)
+ridership_with_weather$avg_temp <- (ridership_with_weather$tmin + ridership_with_weather$tmax) / 2
+ridership_with_weather$is_weekend <- (ridership_with_weather$day_of_week == "Saturday" |
+                                        ridership_with_weather$day_of_week == "Sunday")
+ridership_with_weather <- left_join(ridership_with_weather, holidays)
+
+# clean NA's in holidays
+ridership_with_weather$is_holiday <- replace_na(ridership_with_weather$is_holiday, FALSE)
+```
+
+## Predict Daily Citibike Trips
+
+
+```{r}
+
+test_data <- ridership_with_weather %>% filter(! is.na(lagged_trips))
+
+y_hat <- predict(predicting_model, test_data)
+
+plot_data <- test_data %>%
+  mutate(pred = y_hat)
+
+plot_data %>% ggplot(aes(y = num_trips, x = ymd)) +
+  geom_point() +
+  geom_line(aes(y = pred))
+
+# # training r^2 = 0.8876
+r_squared_test <- cor(y_hat, test_data$num_trips) ^ 2 # 0.8462
+ 
+rmse_squared_test <- rmse(predicting_model, test_data) # 6129.76
+```

@@ -18,7 +18,7 @@ library(ggthemes)
 theme_set(theme_gdocs())
 
 # load year of citibike trips
-load(file="trips.RData")
+load(file="../week1/trips.RData")
 
 # load holiday data
 holidays <- read.csv(file="us-bank-holidays-2011-2020.csv") %>% select(Date, Bank.Holiday)
@@ -98,6 +98,10 @@ full_plot_data %>% ggplot(aes(y = num_trips, x = ymd)) +
 
 full_plot_data %>% ggplot(aes(x = pred, y = num_trips)) +
   geom_point()
+
+predicting_model <- lm(num_trips ~ avg_temp + is_weekend + prcp + snwd + is_holiday + lagged_trips, data = ridership_with_weather)
+save(predicting_model, file = "predict_citibike.RData")
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
