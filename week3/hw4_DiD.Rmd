@@ -1,0 +1,184 @@
+---
+title: 'HW 4: Causal Inference with Difference in Difference (DiD)'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+dataset <- read.csv("fastfood-codebook-nj-pa.csv")
+```
+
+## 1) Picking Control Variables
+
+Imagine you have one data point from every county in the US that gives the unemployment rate in that county in 2010 and the amount of money spent by that country on job training programs in 2008. You want to know the treatment effect of money spent on job training programs onto the outcome of unemployment (as measured two years later). List as many examples as you can think of for each category of control variable:
+
+* Confounding Variables: (controlling for lagged quantities, is a good control valuable)
+  * Types of Jobs in County
+  * Unemployment in 2008
+  * Increase in Poverty from 2008
+* Variance Reducing Variables:
+  * Economic Crisis / Spike in Low Skill Labor Need
+* Unrelated Variables:
+  * Weather in that Year
+  * Astrological Sign
+* Bad Controls:
+  * Unemployment Rate 2009
+
+```{r }
+```
+
+## 2) DiD with Card and Krueger (1993)
+
+Download the dataset and definitions file from the coursework repo. Note: (1) that the first interview occurred before the onset of the minimum wage and that the second occurred after and (2) this dataset is paired (each restaurant has a before and after observation) so the steps you take will be a little bit different than those discussed in class.
+
+1. Before looking at the data, look just at the list outcome metrics that were tracked in each interview (EMPFT EMPPT NMGRS WAGEST INCTIME FIRSTINC BONUS PCTAFF MEALS OPEN HRSOPEN PSODA PFRY PENTREE NREGS ). List the ones that you think could be impacted by the minimum wage change and give a brief explanation of why.
+
+* EMPFT, EMPPT, NMGRS
+  * number of employees overall can shift downwards if minimum wage increases because its now more expensive to have the same number of employees
+* WAGE_ST, PCTAFF
+  * wage would be effected if it is below the new min_wage
+  * PCTAFF could change if min_wage includes more workers now
+* PSODA, PFRY, PENTREE
+  * these can change if workers pay changes
+* NREGS11
+  * number of registers open at 11 may change if you have fewer workers overall
+
+2. Compute the 'diffs'. Check to see if each outcome metric changed in a statistically significant way between the two interviews. Do this analysis separately for PA and NJ.
+
+```{r}
+
+# EMPFT is not significant
+
+# first_vars = c("NCALLS", "EMPFT", "EMPPT", "NMGRS", "WAGE_ST", "INCTIME", "FIRSTINC", "MEALS", "OPEN", "HRSOPEN", "PSODA", "PFRY", "PENTREE", "NREGS", "NREGS11")
+# second_vars = c("NCALLS2", "EMPFT2", "EMPPT2", "NMGRS2", "WAGE_ST2", "INCTIME2", "FIRSTIN2", "MEALS2", "OPEN2R", "HRSOPEN2", "PSODA2", "PFRY2", "PENTREE2", "NREGS2", "NREGS112")
+# 
+# for (i in 1:length(first_vars)) {
+#   # print(sprintf("first: %s second: %s", first_vars[i], second_vars[i]))
+#   nj_diff[sprintf("diff_%s", first_vars[i])] <- nj[second_vars[i]] - nj[first_vars[i]]
+#   pa_diff[sprintf("diff_%s", first_vars[i])] <- pa[second_vars[i]] - pa[first_vars[i]]
+# }
+# 
+# nj_diff_cols <- colnames(nj_diff)
+# 
+# for (i in 1:length(colnames(nj_diff))) {
+#   
+#   print(sprintf("col: %s    pval: %s", nj_diff_cols[i], t.test(nj_diff[nj_diff_cols[i]])$p.value))
+#   
+#   print(sprintf("col: %s    pval: %s", pa_diff_cols[i], t.test(pa_diff[nj_diff_cols[i]])$p.value))
+#   
+# }
+
+nj <- dataset %>% filter(STATE == 1)
+pa <- setdiff(dataset, nj)
+nj_diff <- nj %>% select()
+pa_diff <- pa %>% select()
+
+reg <- lm(formula = WAGE_ST2 - WAGE_ST ~ 1, data = nj)
+summary(reg)
+
+# ST_WAGE is significant and increases, as it should
+
+reg <- lm(formula = EMPFT2 - EMPFT ~ 1, data = nj)
+summary(reg)
+
+# EMPFT is not significant
+
+reg <- lm(formula = EMPPT2 - EMPPT ~ 1, data = nj)
+summary(reg)
+
+# EMPPT is not significant
+
+reg <- lm(formula = NMGRS2 - NMGRS ~ 1, data = nj)
+summary(reg)
+
+# NMGRS is not significant
+
+reg <- lm(formula = PENTREE2 - PENTREE ~ 1, data = nj)
+summary(reg)
+
+# PENTREE is somewhat significant, and minorly shifts up
+
+# NOW PA
+
+reg <- lm(formula = WAGE_ST2 - WAGE_ST ~ 1, data = pa)
+summary(reg)
+
+# ST_WAGE is not significantly different
+
+reg <- lm(formula = EMPFT2 - EMPFT ~ 1, data = pa)
+summary(reg)
+
+# EMPFT is not significant
+
+reg <- lm(formula = EMPPT2 - EMPPT ~ 1, data = pa)
+summary(reg)
+
+# EMPPT is not significant
+
+reg <- lm(formula = NMGRS2 - NMGRS ~ 1, data = pa)
+summary(reg)
+
+# NMGRS is not significant
+
+reg <- lm(formula = PENTREE2 - PENTREE ~ 1, data = pa)
+summary(reg)
+
+# PENTREE is not significant
+```
+
+3. Now compute the "diff-in-diff" via the regression method. As I mentioned previously, this step will be a little different because the data is paired. Think carefully about the best way to do this and I'll come and chat with you guys about it after about an hour.
+
+```{r}
+
+reg <- lm(formula = WAGE_ST2 - WAGE_ST ~ STATE, data = dataset)
+summary(reg)
+
+# difference is significant, and goes up by ~0.45
+
+reg <- lm(formula = EMPFT2 - EMPFT ~ STATE, data = dataset)
+summary(reg)
+
+# difference is signficant and shifts up by 2.1
+
+reg <- lm(formula = EMPPT2 - EMPPT ~ STATE, data = dataset)
+summary(reg)
+
+# difference isn't significant
+
+reg <- lm(formula = NMGRS2 - NMGRS ~ STATE, data = dataset)
+summary(reg)
+
+# difference isn't significant
+
+reg <- lm(formula = PENTREE2 - PENTREE ~ STATE, data = dataset)
+summary(reg)
+
+# difference isn't significant
+
+```
+
+4. Do you believe this analysis provides definitive evidence on the impact of the minimum wage on employment? Can you imagine a scenario that would lead to this type of estimation giving biased results?
+
+Our analysis depends heavily on the assumption that NJ and PA have parrallel trends. If there were any economic downturns in PA during the time of analysis, it could bias our estimate for how much NJ is impacted in this scenario
+
+
+5. Card and Krueger create an Independent Variable called GAP = (5.05_Wpre)/Wpre, this is the percentage wage increase that New Jersey restaurants needed in order to meet the minimum wage. Use the variable WAGEST (from before the interview) to create this variable. How might restaurants with very large or small values of this variable differ in their response to the minimum wage. Why do you think this variable is interesting? Run any other interesting analysis you can think of using this variable.
+
+```{r}
+
+dataset$GAP = (5.05 > dataset$WAGE_ST) * (5.05 - dataset$WAGE_ST) / dataset$WAGE_ST
+
+reg <- lm(formula = WAGE_ST2 - WAGE_ST ~ STATE * GAP, data = dataset)
+summary(reg)
+
+# this shows the restaurants with the largest gap had bigger increases in the wage
+
+reg <- lm(formula = EMPFT2 - EMPFT ~ STATE * GAP, data = dataset)
+summary(reg)
+
+# this shows that the difference wasn't significant, so we don't have much confidence in it
+
+```

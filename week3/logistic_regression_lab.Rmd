@@ -1,0 +1,156 @@
+---
+title: "Lab 16: Logistic Regression and ROC Curves"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(stargazer)
+library(caret)
+
+loan <- read.csv("lending_club_cleaned.csv")
+summary(loan)
+```
+
+## Introduction
+
+In this lab we will revisit two data sets we saw previously, and apply logistic regression. Let's begin with the Lending Club data. We already cleaned up the data somewhat in previous labs so this time we will load in the clean data set. To get to the cleaned up data we eliminated observations with missing value for loan_status, created good loan/bad loan indicator named good, calculated average fico, consolidated small or similar purpose categories, created a new variable income which equals income if either the source of income or income itself is verified, otherwise it equals NA. The cleaning script is here.
+
+```{r}
+
+model <- glm(good ~ fico, family = "binomial", data = loan)
+summary(model)
+
+```
+
+
+
+
+## Exercises
+
+1. Let's load the Titanic training data. What are the odds of surviving the shipwreck?
+
+```{r}
+titanic <- read.csv("titanic_train.csv")
+summary(titanic)
+
+# p(survived) = # survived / # people
+prob_survived <- mean(titanic$Survived) # 0.384
+
+#odds = p / 1-p
+```
+
+2. Using the logit model, estimate how much lower are the odds of survival for men relative to women?
+
+```{r}
+# estimate logistical model
+model1 <- glm(Survived ~ Sex, data = titanic, family = "binomial")
+summary(model1)
+
+exp(coef(model1))
+# men are 90% less likely than to survive
+
+1 - exp(coef(model1))
+```
+
+3. Controlling for gender, does age have a statistically significant effect on the odds of survival? If so, what is the magnitude of that effect?
+
+```{r}
+
+p_survived <- mean(titanic$Survived)
+odds_survive <- p_survived / (1 - p_survived)
+
+model2 <- glm(Survived ~ Sex * Age, data = titanic, family = "binomial")
+summary(model2)
+
+# Age (controlled for gender) doesn't have a statistically significant effect on odds of survival
+# However, Age interacted with Gender does show that there's a statistically significant effect on odds
+# older men, have a lower probability of surviving than younger men
+```
+
+4. Controlling for gender, does passenger class have a statistically significant effect on the odds of survival? If so, what is the magnitude of that effect?
+
+```{r}
+model3 <- glm(Survived ~ Sex + Pclass, data = titanic, family = "binomial")
+summary(model3)
+
+round(exp(coef(model3)),3)
+
+# Yes, passenger class has a statistically significant effect on the odds of survival.
+# As your passenger class increases, your chances of survival fall by 61.7%
+
+```
+5. Controlling for gender, estimate the effect of being in the second class relative to first class, and the effect of being in the third relative to first.
+
+```{r}
+model4 <- glm(Survived ~ Sex + as.factor(Pclass), data = titanic, family = "binomial")
+summary(model4)
+
+round(exp(coef(model4)),3)
+# 2nd class has a 56.7% lower chance of survival than 1st class
+# 3rd class has a 85.1% lower chance of survival than 1st class
+```
+
+6. Add fare to the regression you estimated above. Is fare a significant determinant of survival controlling for gender and passenger class? Do you think that if we regressed survival on just gender and fare, fare would be significant? Explain.
+
+```{r}
+model5 <- glm(Survived ~ Sex + as.factor(Pclass) + Fare, data = titanic, family = "binomial")
+summary(model5)
+
+round(exp(coef(model5)),3)
+
+# Fare is not a significant determinant of survival controlling for gender and passenger class
+# if we regressed survival on just gender and fare, then it would be significant because it would be taking the place of the information that passenger class gives us
+```
+
+7. As we know from the movie, Jack traveled in the third class and paid 5 pounds (I know that Jack actually won the ticket in poker, but Swen, from whom Jack won the ticket, paid .). Rose traveled in the first class and paid 500 for her ticket (I know that her fiancee, Cal Hockley - Pittsburgh steel tycoon, actually bought the ticket, but .). What is the probability that Jack will survive? What is the probability that Rose will survive?
+
+```{r}
+
+test_jack <- data.frame(Pclass = c(3, 1), Sex = c("male", "female"), Fare = c(5, 500))
+test_jack$Sex = factor(test_jack$Sex, levels = c("male", "female"))
+test_jack
+
+prediction <- predict(model5, test_jack, type="response")
+names(prediction) <- c("Jack", "Rose")
+prediction
+#       Jack       Rose 
+# 0.09463195 0.95500851 
+```
+
+8. Create your own logistic model and make predictions for passengers in the Titanic test data set. Keep in mind that you must make predictions for all passengers in the test data (even those with missing values). Use your own probability cut off for predicting survival (0.5 is a natural start). Did you do better with logistic regression than with decision trees? Which algorithm do you like better?
+
+```{r}
+
+set.seed(20)
+
+titanic$age_bin <- as.factor(cut(titanic$Age, seq(0, 80, 10)))
+titanic$age_bin <- as.factor(ifelse(is.na(titanic$age_bin), "NA", titanic$age_bin))
+
+train_titanic <- sample_frac(titanic, 0.8)
+test_titanic <- anti_join(titanic, train_titanic)
+
+model6 <- glm(Survived ~ Sex * age_bin + as.factor(Pclass), data = train_titanic, family = "binomial")
+summary(model6)
+round(exp(coef(model6)),3)
+
+test_titanic$pred <- predict(model6, test_titanic, type = "response")
+test_titanic$survived_pred <- ifelse(test_titanic$pred > 0.6, "survived", "died")
+test_titanic$survived_actual <- ifelse(test_titanic$Survived, "survived", "died")
+
+test_titanic$survived_pred <- ordered(test_titanic$survived_pred, levels = c("survived", "died"))
+test_titanic$survived_actual <- ordered(test_titanic$survived_actual, levels = c("survived", "died"))
+
+test_titanic$survived_actual
+confusionMatrix(as.factor(test_titanic$survived_pred), as.factor(test_titanic$survived_actual))
+
+
+library(pROC)
+roc <- roc(test_titanic$survived_actual, test_titanic$survived_pred)
+
+plot.roc(roc)
+
+```

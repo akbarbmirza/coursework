@@ -1,0 +1,132 @@
+---
+title: "Classification"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(scales)
+library(ElemStatLearn) # spam dataset
+library(e1071) # implementation of naive Bayes
+library(ROCR) # evaluation metrics
+```
+
+## Split `spam` dataset for train and test
+
+Next we use the spam dataset and split the data in to a train and test set (ignoring validation for the time being).
+The outcome (email or spam) is in last column (#58).
+
+```{r split-for-train-test}
+set.seed(42)
+
+ndx <- sample(nrow(spam), floor(nrow(spam) * 0.9))
+train <- spam[ndx, ]
+test <- spam[-ndx, ]
+
+x_train <- train[, -58]
+y_train <- train$spam
+x_test <- test[, -58]
+y_test <- test$spam
+```
+
+## Naive Bayes
+
+Now we'll fit a naive Bayes model without any smoothing.
+
+The model has tables for the prior class probabilities (`apriori`) as well as for each feature (`tables`), and some extra info.
+
+```{r naive-bayes}
+model <- naiveBayes(x_train, y_train)
+summary(model)
+
+# now we'll make predictions, which will by default return the most probably class label for each test example.
+df <- data.frame(actual = y_test,
+                 pred = predict(model, x_test))
+head(df)
+tail(df)
+table(df)
+
+# accuracy: fraction of correct classifications
+df %>%
+    summarize(acc = mean(pred == actual))
+
+# precision: fraction of positive predictions that are actually true
+df %>%
+    filter(pred == 'spam') %>%
+    summarize(prec = mean(actual == 'spam'))
+
+# recall: fraction of true examples that we predicted to be positive
+# aka true positive rate, sensitivity
+df %>%
+    filter(actual == 'spam') %>%
+    summarize(recall = mean(pred == 'spam'))
+
+# false positive rate: fraction of false examples that we predicted to be positive
+df %>%
+    filter(actual == 'email') %>%
+    summarize(fpr = mean(pred == 'spam'))
+
+# next we can look at the raw probabilities predicted by naive Bayes
+# by calling predict with type = raw, and examine a histogram of all
+# predictions.
+# NOTE: this is highly bimodal because naive Bayes is overconfident
+
+# plot histogram of predicted probabilities
+# note overconfident predictions
+probs <- data.frame(predict(model, x_test, type = "raw"))
+
+ggplot(probs, aes(x = spam)) +
+    geom_histogram(binwidth = 0.01) +
+    scale_x_continuous(label = percent) +
+    xlab('Predicted Probability of Spam') +
+    ylab('Number of Examples')
+
+# we can also check calibration by looking at how often predicted probabilities match actual frequencies.
+# this is most easily done by binning examples by their predicted probability of being spam and then counting how often those examples actually turn out to be spam.
+data.frame(predicted=probs[, "spam"], actual=y_test) %>%
+    group_by(predicted=round(predicted * 10) / 10) %>%
+    summarize(num = n(), actual = mean(actual == "spam")) %>%
+    ggplot(data = ., aes(x = predicted, y = actual, size = num)) +
+    geom_point() +
+    geom_abline(linetype=2) +
+    scale_x_continuous(label=percent, lim = c(0,1)) +
+    scale_y_continuous(label=percent, lim = c(0,1)) +
+    xlab('Predicted Probability of Spam') +
+    ylab('Percent that are Actually Spam')
+
+# We can use the ROCR package to make a plot of the receiver operator characteristic (ROC) curve and compute the area under the curve (AUC).
+# The ROC curve plots the true positive rate (also known as recall, sensitivity, or the probability of detecting a true example) against the false positive rate (also known as 1 - specificity, or the probability of a false alarm) as we change the threshold on the probability for predicting spam. In this case that's the fraction of all incoming spam detected vs. the fraction of legitimate emails that get labeled as spam.
+
+# create a ROCR object
+pred <- prediction(probs[, "spam"], y_test)
+
+# plot ROC curve
+perf_nb <- performance(pred, measure='tpr', x.measure='fpr')
+plot(perf_nb)
+performance(pred, 'auc')
+
+# Note that the area under the curve (AUC) is equivalent to the probability of scoring a randomly sampled positive example above a randomly sampled negative one.
+# We can approximate this directly by repeated sampling of pairs of examples and checking for the correct ranking.
+
+# sample pos/neg pairs
+predicted <- probs[, "spam"]
+actual <- y_test == "spam"
+ndx_pos <- sample(which(actual == 1), size = 100, replace = T)
+ndx_neg <- sample(which(actual == 0), size = 100, replace = T)
+mean(predicted[ndx_pos] > predicted[ndx_neg])
+
+model <- glm(spam ~ ., data = spam[ndx, ], family = "binomial") # . syntax means everything else, "binomial" means logistic regression
+model
+# summary(model)
+
+df <- data.frame(actual = y_test,
+                 log_odds = predict(model, x_test)) %>%
+  mutate(pred = ifelse(log_odds > 0, 'spam', 'email'))
+head(df)
+
+table(actual = df$actual, predicted = df$pred)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
