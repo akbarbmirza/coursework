@@ -1,0 +1,136 @@
+---
+title: 'Lab: Decision Trees'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tree)
+```
+
+## Decision Trees Lab - Exercises
+
+1. These exercises are based on a famous kaggle competition in which competitors predict who lives and who dies on the Titanic. Download the data set from this address, and load it into R. It has the following variables:
+
++ `Survived` Survival (0 = No; 1 = Yes)
++ `Pclass` Passenger Class (1 = 1st; 2 = 2nd; 3 = 3rd)
++ `Name` Name
++ `Sex` Sex
++ `Age` Age (in years)
++ `SibSp` Number of Siblings/Spouses Aboard
++ `Parch` Number of Parents/Children Aboard
++ `Ticket` Ticket Number
++ `Fare` Passenger Fare
++ `Cabin` Cabin
++ `Embarked` Port of Embarkation (C = Cherbourg; Q = Queenstown; S = Southampton)
+
+```{r lab-1}
+
+titanic_train <- read.csv("titanic_train.csv")
+
+```
+
+2. What percentage of passengers in our data set survived?
+
+```{r lab-2}
+
+mean(titanic_train$Survived) # 38.38384% survived
+
+```
+
+3. Which variables do you think may be good predictors of the survival on the Titanic? Document your exploration. (Hint: You may want to turn the `Survived` variable into a factor using the `factor()` function.)
+
+```{r lab-3}
+
+# good predictors of survival:
+#   Pclass
+#   Sex
+#   Age for Men
+model1 <- glm(Survived ~ as.factor(Pclass) + Sex*Age, titanic_train, family = "binomial")
+summary(model1)
+
+```
+
+4. Estimate a decision tree predicting survival using age and sex as predictors. Describe your results.
+
+```{r lab-4}
+
+tree1 <- tree(as.factor(Survived) ~ Age + Sex, titanic_train)
+print(tree1)
+summary(tree1)
+plot(tree1)
+text(tree1, pretty = 0)
+
+# node), split, n, deviance, yval
+#       * denotes terminal node
+# 
+# 1) root 714 172.200 0.4062  
+#   2) Sex: female 261  48.310 0.7548 *
+#   3) Sex: male 453  73.910 0.2053  
+#     6) Age < 6.5 24   5.333 0.6667 *
+#     7) Age > 6.5 429  63.180 0.1795 *
+
+# if you're a woman of any age, you have a 75.5% chance of survival
+# if you're a man, you have a 20.5% chance 
+#   a 56.76% chance of survival if you're less than 13 years old
+#   a 17.31% chance of survival if you're older than 13 years old
+
+# 21.29% misclassification error
+```
+
+5. Estimate a decision tree using age, sex and passenger class. Describe your results.
+
+```{r lab-5}
+
+tree2 <- tree(as.factor(Survived) ~ Age + Sex + as.factor(Pclass), titanic_train)
+print(tree2)
+summary(tree2)
+plot(tree2)
+text(tree2)
+
+# node), split, n, deviance, yval
+#       * denotes terminal node
+# 
+#  1) root 714 172.2000 0.40620  
+#    2) Sex: female 261  48.3100 0.75480  
+#      4) as.factor(Pclass): 3 102  25.3400 0.46080  
+#        8) Age < 38.5 90  22.4900 0.51110 *
+#        9) Age > 38.5 12   0.9167 0.08333 *
+#      5) as.factor(Pclass): 1,2 159   8.4910 0.94340 *
+#    3) Sex: male 453  73.9100 0.20530  
+#      6) Age < 6.5 24   5.3330 0.66670  
+#       12) as.factor(Pclass): 3 14   3.4290 0.42860 *
+#       13) as.factor(Pclass): 1,2 10   0.0000 1.00000 *
+#      7) Age > 6.5 429  63.1800 0.17950  
+#       14) as.factor(Pclass): 2,3 330  34.3900 0.11820 *
+#       15) as.factor(Pclass): 1 99  23.4100 0.38380  
+#         30) Age < 53 77  19.0900 0.45450 *
+#         31) Age > 53 22   2.5910 0.13640 *
+
+# error rate went down to 21%
+```
+
+6. Estimate your own decision tree with your own set of predictors (you are, of course, free to include the predictors we used above). How accurate is your model on the training data? How does it compare to the models above?
+
+```{r lab-6}
+
+tree3 <- tree(as.factor(Survived) ~ Age + Sex + as.factor(Pclass) + SibSp + Parch, titanic_train)
+print(tree3)
+summary(tree3)
+plot(tree3)
+text(tree3)
+
+# it brought down misclassification error by about 1%
+# misclassification error rate: 18.63%
+```
+
+7. Download test data from this link. This is the test data from Kaggle, we actually don't know the true fate of the passengers in this data set. Use this data to make predictions for these passengers.
+
+```{r lab-7}
+
+titanic_test <- read.csv("titanic_test.csv")
+pred <- predict(tree3, titanic_test, type = "class")
+pred
+
+```
