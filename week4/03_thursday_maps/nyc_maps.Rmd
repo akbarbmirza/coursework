@@ -1,0 +1,162 @@
+---
+title: "NYC Maps Lab"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tigris)
+library(leaflet)
+library(sp)
+library(ggmap)
+library(maptools)
+library(broom)
+library(httr)
+library(rgdal)
+library(tidyverse)
+```
+
+# Basic Maps
+
+## ggmap
+
+Make basic maps with `ggmap` by specifying a location (as a string or by lat/long) and zoom level. The `geocode` function is used to convert a string to lat/long behind the scenes and tiles are pulled from Google maps.
+
+
+```{r ggmap}
+nyc_map <- get_map(location = c(lon = -74.00, lat = 40.71),
+                   maptype = "terrain",
+                   zoom = 11)
+ggmap(nyc_map)
+```
+
+## leaflet
+
+Or make interactive maps using Leaflet for R in Rstudio.
+
+```{r leaflet}
+leaflet() %>%
+  addTiles() %>%
+  setView(-74.00, 40.71, zoom = 12) %>%
+  addProviderTiles("CartoDB.Positron")
+```
+
+# Shapefiles
+
+## Census tracts from tigris
+
+The `tigris` package makes it easy to grab Census shapefiles at various levels, from tracts and zipcodes all the way up to national borders. First we look up the appropriate codes.
+
+```{r census-tracts}
+lookup_code("New York", "New York")
+
+nyc_tracts <- tracts(state = '36', county = c('061', '047', '081', '005', '085'))
+summary(nyc_tracts)
+plot(nyc_tracts)
+```
+
+## Neighborhoods
+
+Census tracts are great, but they might be too detailed for many purposes, where neighborhoods might be a more familiar unit of analysis. The PUMA Census neighborhoods for New York City lump together a few distinct areas (e.g., Chelsea, Flatiron, and the West Village), but Pediacities has more fine-grained neighborhood shapefiles available as a GeoJSON file.
+
+```{r neighborhoods}
+r <- GET('http://data.beta.nyc//dataset/0ff93d2d-90ba-457c-9f7e-39e47bf2ac5f/resource/35dd04fb-81b3-479b-a074-a27a37888ce7/download/d085e2f8d0b54d4590b1e7d1f35594c1pediacitiesnycneighborhoods.geojson')
+nyc_neighborhoods <- readOGR(content(r,'text'), 'OGRGeoJSON', verbose = F)
+
+summary(nyc_neighborhoods)
+```
+
+### ggplot
+
+`ggplot` can plot shapefiles but requires them to be converted from a spatial polygon data frame format to plain old data frames first. `broom` handles this with its tidy command. (`fortify` from the `sp` package also works.)
+
+```{r neighborhoods.ggplot}
+nyc_neighborhoods_df <- tidy(nyc_neighborhoods)
+
+ggplot() + 
+  geom_polygon(data = nyc_neighborhoods_df, aes(x=long, y=lat, group=group))
+
+ggmap(nyc_map) +
+  geom_polygon(data = nyc_neighborhoods_df, aes(x=long, y=lat, group=group),
+               color = "blue",
+               fill = NA)
+```
+
+### leaflet
+
+Or we can do an interactive version which shows neighborhood names when you click on a polygon.
+
+```{r neighborhoods.leaflet}
+leaflet(nyc_neighborhoods) %>%
+  addTiles() %>%
+  addPolygons(popup = ~neighborhood) %>%
+  addProviderTiles("CartoDB.Positron")
+```
+
+## Spatial Joins
+
+There are also convenient functions for mapping lat/long pairs into polygons. This is useful if you want to know what neighborhood a certain point is in, for instance.
+
+To see how this works, let's first generate 10 random points in Manhattan.
+
+```{r spatialjoins.1}
+set.seed(42)
+lats <- 40.7544882 + rnorm(10) / 100
+lngs <- -73.9879923 + rnorm(10) / 200
+points <- data.frame(lat=lats, lng=lngs)
+points
+```
+
+In order to do the join, we first need to convert the points data frame to a spatial data frame. The `coordinates` function specifies which columns should be used for positioning, and the `proj4string` function specifies what type of projection should be used. In this case we just want a projection that's consistent with the neighborhood shapes, so we copy it over. Finally, we use the matches function to do the spatial join and bind the columns back together.
+
+```{r spatialjoins.2}
+points_spdf <- points
+coordinates(points_spdf) <- ~lng + lat
+proj4string(points_spdf) <- proj4string(nyc_neighborhoods)
+matches <- over(points_spdf, nyc_neighborhoods)
+points <- cbind(points, matches)
+points
+```
+
+We can verify the matches by poking around on an interactive map and clicking the polygons and markers to see that proper neighborhoods have been assigned.
+
+```{r spatialjoins.3}
+leaflet(nyc_neighborhoods) %>%
+  addTiles() %>%
+  addPolygons(popup = ~neighborhood) %>%
+  addMarkers(~lng, ~lat, popup = ~neighborhood, data = points) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(-73.98, 40.75, zoom = 13)
+```
+
+Finally, we can use other data to color our polygons. As an example, we'll count the number of points in each polygon and map that to a color. The `geo_join` function makes it easy to join the spatial polygon data frame to a regular data frame. Here's the plot with Leaflet.
+
+```{r spatialjoins.4}
+points_by_neighborhood <- points %>%
+  group_by(neighborhood) %>%
+  summarize(num_points = n())
+
+map_data <- geo_join(nyc_neighborhoods, points_by_neighborhood, "neighborhood", "neighborhood")
+
+pal <- colorNumeric(palette = "RdBu",
+                    domain = range(map_data@data$num_points, na.rm = T))
+
+leaflet(map_data) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~pal(num_points), popup = ~neighborhood) %>%
+  addMarkers(~lng, ~lat, popup = ~neighborhood, data = points) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(-73.98, 40.75, zoom = 13)
+```
+
+We can do the same thing with `ggplot` and `ggmap` for a different look/feel, but we need to construct the underlying data frame in a slightly different way. First we use `broom` to convert the spatial data frame to a tidy data frame by neighborhood, then we join the number of points by neighborhood to the tidy data frame, and plot.
+
+```{r spatialjoins.5}
+plot_data <- tidy(nyc_neighborhoods, region="neighborhood") %>%
+  left_join(., points_by_neighborhood, by=c("id"="neighborhood")) %>%
+  filter(!is.na(num_points))
+```
+
+
