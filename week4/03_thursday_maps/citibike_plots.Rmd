@@ -38,7 +38,7 @@ end <- trips %>%
            lng=start_station_longitude) %>%
   summarize()
 
-stations <- union(start, end)
+stations <- merge(start, end)
 ```
 
 2. Make a map showing the location of each Citibike station using ggmap
@@ -121,8 +121,8 @@ points_with_num_stations <- points %>% left_join(stations_by_neighborhood)
 
 experimental_icon <- makeIcon(
   iconUrl = "http://www.emoticonswallpapers.com/avatar/games/Ness-bike.gif",
-  iconWidth = 44, iconHeight = 44,
-  iconAnchorX = 22, iconAnchorY = 22,
+  iconWidth = 24, iconHeight = 24,
+  iconAnchorX = 12, iconAnchorY = 12,
 )
 
 leaflet(map_data) %>%

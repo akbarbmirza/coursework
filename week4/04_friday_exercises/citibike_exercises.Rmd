@@ -1,0 +1,73 @@
+---
+title: "Citibike 2014 Plots"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+
+load("trips.RData")
+```
+
+Create a function that computes historical trip times between any two stations: 
+
+1. Take the trips dataframe and two station names as inputs
+
+2. Return a 168-by-6 dataframe with summary statistics of trip times for each hour of the week (e.g., Monday 9am, Monday 10am, etc.), where the summary statistics include: 
+  + Average number of trips in that hour
+  + Average and median trip times for that hour
+  + Standard deviation in trip time for that hour
+  + Upper and lower quartiles of trip time for that hour
+  
+```{r citibike.1}
+compute.historical.trip.times <- function(start, end) {
+  
+  data <- trips %>%
+    filter(start_station_name == start, end_station_name == end) %>%
+    mutate(week = week(ymd),
+           day = weekdays(ymd),
+           hour = hour(starttime)) %>%
+    select(week, day, hour, start = start_station_name, end = end_station_name, tripduration)
+  
+  
+  stats <- data %>% group_by(day, hour) %>%
+    summarize(avg_trips = mean(n()),
+              avg_trip_duration = mean(tripduration),
+              median_trip_duration = median(tripduration),
+              sd_trip_time = sd(tripduration),
+              upper_quartile = quantile(tripduration, 0.75),
+              lower_quartile = quantile(tripduration, 0.25))
+
+  return(stats)
+}
+```
+
+3. Use this function on trips between Penn Station and Grand Central (you can use the most popular station at each location)
+"8 Ave & W 31 St"
+"E 42 St & Vanderbilt Ave"
+
+```{r citibike.2}
+
+result = compute.historical.trip.times("8 Ave & W 31 St", "E 43 St & Vanderbilt Ave")
+
+```
+
+4. Make a plot of the results, where each facet is a day of the week, the x axis shows hour of the day, and the y axis shows average trip time, with transparent ribbons to show the standard deviation in trip time around the mean
+
+```{r citibike.4}
+
+ggplot(data = result, aes(x = hour, y = avg_trip_duration / 60)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = (avg_trip_duration - sd_trip_time) / 60, ymax = (avg_trip_duration + sd_trip_time) / 60), alpha = 0.25) +
+  geom_point(aes(size = avg_trips)) +
+  facet_wrap(~day) +
+  ylab("Average Trip Duration (mins)") +
+  xlab("Hour of Day") +
+  xlim(c(6, 18)) +
+  ylim(c(0, 30))
+
+```
